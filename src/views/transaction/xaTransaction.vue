@@ -83,8 +83,8 @@
           </div>
           <el-col :span="10">
             <transaction-form
+              ref="originTransaction"
               :transaction="transactionForm"
-              :submit-response="submitResponse"
               style="height: 50vh; overflow-y:auto; overflow-x:hidden"
               @clearClick="clearTransaction"
               @submitClick="execTransaction"
@@ -96,9 +96,7 @@
                 style="width: 100%"
                 filterable
                 default-first-option
-                @change="() => {
-                  transactionForm.method=null; transactionForm.args=[{value: null,key: 0}]; submitResponse = null
-                }"
+                @change="onSelectionChange"
               >
                 <el-option
                   v-for="path in this.$store.getters.XAPaths"
@@ -111,10 +109,17 @@
           </el-col>
           <el-col :span="12" :offset="2">
             <el-row>
-              <div v-if="this.$store.getters.transactionID !== null" style="font-size: 15px">
-                {{ "当前事务ID：" + this.$store.getters.transactionID }}
-                <el-divider />
+              <div style="font-size: 14px">
+                <el-tooltip effect="light" content="复制事务ID" placement="top-start">
+                  <clipboard :input-data="this.$store.getters.transactionID" style="float:right;" />
+                </el-tooltip>
+                <el-tooltip effect="light" :content="this.$store.getters.transactionID" placement="top-start">
+                  <div>
+                    {{ "当前事务ID： " + limitString(this.$store.getters.transactionID) }}
+                  </div>
+                </el-tooltip>
               </div>
+              <el-divider />
             </el-row>
             <el-row>
               <el-table stripe fit style="width: 100%;" height="45vh" :data="transactionStep" tooltip-effect="light">
@@ -278,6 +283,7 @@
 <script>
 import TransactionForm from '@/views/transaction/components/TransactionForm'
 import ResourceTransfer from '@/components/ResourceTransfer/index'
+import Clipboard from '@/components/Clipboard/index'
 import { getResourceList } from '@/api/resource'
 import { call, getXATransaction, sendTransaction } from '@/api/transaction'
 import { parseTime, limitString } from '@/utils'
@@ -287,7 +293,8 @@ export default {
   name: 'XATransaction',
   components: {
     TransactionForm,
-    ResourceTransfer
+    ResourceTransfer,
+    Clipboard
   },
   filters: {
     formatDate(time) {
@@ -323,8 +330,7 @@ export default {
         execMethod: 'sendTransaction',
         isXATransaction: true
       },
-      loading: false,
-      submitResponse: null
+      loading: false
     }
   },
   watch: {
@@ -353,6 +359,11 @@ export default {
           break
       }
     },
+    onSelectionChange() {
+      const tempPath = this.transactionForm.path
+      this.$refs.originTransaction.clearForm()
+      this.transactionForm.path = tempPath
+    },
     loadXATransaction(isExec) {
       const xaID = this.$store.getters.transactionID
       if (xaID !== null && typeof (isExec) === 'undefined') {
@@ -361,7 +372,8 @@ export default {
           title: '提示',
           message: h('p', null, [
             h('h3', { style: 'font-weight: bold; margin-left:10px' }, '目前有事务正在执行中，是否恢复？'),
-            h('li', { style: 'font-weight: bold; margin-left:10px' }, '事务ID: ' + xaID),
+            h('li', { style: 'font-weight: bold; margin-left:10px' }, '事务ID：'),
+            h('ol', null, limitString(xaID)),
             h('li', { style: 'font-weight: bold; margin-left:10px' }, '锁定资源: '),
             h('ol', null, this.$store.getters.XAPaths.map(item => limitString(item)).join(',  \n'))
           ]),
@@ -459,6 +471,7 @@ export default {
     },
     creatUUID() {
       const { v4: uuidV4 } = require('uuid')
+      console.log(typeof uuidV4())
       this.transactionForm.transactionID = uuidV4().toString().replaceAll('-', '')
       this.$refs['transactionForm'].clearValidate('transactionID')
     },
@@ -467,7 +480,6 @@ export default {
         value: null,
         key: 0
       }]
-      this.submitResponse = null
     },
     endTransaction() {
       // turn to step3
@@ -504,7 +516,6 @@ export default {
     },
     execTransaction(transaction) {
       this.loading = true
-      this.submitResponse = null
       const args = []
       for (const arg of transaction.args) {
         args.push(arg.value)
@@ -555,24 +566,8 @@ export default {
     },
     onResponse(response) {
       this.loading = false
-      if (response.errorCode !== 0 || response.data.errorCode !== 0) {
-        this.submitResponse = null
-
-        let code, message
-        if (response.errorCode !== 0) {
-          code = response.errorCode
-          message = response.message
-        } else {
-          code = response.data.errorCode
-          message = response.data.message
-        }
-        this.$alert(message, '错误码: ' + code, {
-          confirmButtonText: '确定'
-        })
-      } else {
-        this.submitResponse = JSON.stringify(response.data.result)
-        this.getXADetail()
-      }
+      this.$refs.originTransaction.onResponse(response)
+      this.getXADetail()
     },
     commitTransaction() {
       if (this.$store.getters.transactionID !== null && this.$store.getters.paths !== []) {

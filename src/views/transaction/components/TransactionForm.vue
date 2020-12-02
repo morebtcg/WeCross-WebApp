@@ -11,7 +11,7 @@
       >
         <el-form-item label="调用方式:">
           <el-col>
-            <el-radio-group v-model="transaction.execMethod" size="small" @change="onMethodChange">
+            <el-radio-group v-model="transaction.execMethod" size="small" @change="onExecMethodChange">
               <el-radio label="sendTransaction">发交易</el-radio>
               <el-radio label="call">查状态</el-radio>
             </el-radio-group>
@@ -21,7 +21,7 @@
           <slot name="path" />
         </el-form-item>
         <el-form-item label="调用函数:" prop="method">
-          <el-input v-model.trim="transaction.method" placeholder="请输入调用函数" />
+          <el-input v-model.trim="transaction.method" placeholder="请输入调用函数" @input="onInputMethod" />
         </el-form-item>
         <div v-for="(arg, index) in transaction.args" :key="arg.key">
           <el-form-item
@@ -61,6 +61,8 @@
 
 <script>
 
+import { handleErrorMsgBox } from '@/utils/messageBox'
+
 export default {
   name: 'TransactionForm',
   props: {
@@ -79,10 +81,6 @@ export default {
           isXATransaction: false
         }
       }
-    },
-    submitResponse: {
-      type: String,
-      default: () => { return null }
     }
   },
   data() {
@@ -96,7 +94,7 @@ export default {
             required: true, message: '资源路径总长度不能超过128', trigger: 'blur', max: 128
           },
           {
-            pattern: /^((?!_)(?!-)(?!.*?_$)(?!.*?-$)[a-zA-Z0-9_-]+.){2}(?!_)(?!-)(?!.*?_$)(?!.*?-$)[a-zA-Z0-9_-]+$/,
+            pattern: /^((?!_)(?!-)(?!.*?_$)(?!.*?-$)[\u4e00-\u9fa5\w-]+\.){2}(?!_)(?!-)(?!.*?_$)(?!.*?-$)[\u4e00-\u9fa5\w-]+$/,
             required: true,
             message: '资源路径格式错误，应形如 \'path.to.resource\'',
             trigger: 'change'
@@ -110,34 +108,44 @@ export default {
             required: true, message: '调用方法总长度不能超过128', trigger: 'blur', max: 128
           },
           {
-            pattern: /^(?!_)(?!-)(?!.*?_$)(?!.*?-$)[a-zA-Z0-9_-]+$/,
+            pattern: /^(?!_)(?!-)(?!.*?_$)(?!.*?-$)[\u4e00-\u9fa5\w-]+$/,
             required: true,
             message: '调用方法格式错误, 不支持特殊符号',
             trigger: 'blur'
           }
         ]
       },
+      submitResponse: null,
       loading: false
     }
   },
   methods: {
-    onMethodChange() {
+    onInputMethod() {
+      this.submitResponse = null
+    },
+    onExecMethodChange() {
       console.log('method:', this.transaction.execMethod)
+      const tempPath = this.transaction.path
+      this.clearForm()
+      this.transaction.path = tempPath
       this.$forceUpdate()
     },
     addArg() {
+      this.submitResponse = null
       this.transaction.args.push({
         value: '',
         key: Date.now()
       })
     },
     removeArg(item) {
+      this.submitResponse = null
       const index = this.transaction.args.indexOf(item)
       if (index !== -1) {
         this.transaction.args.splice(index, 1)
       }
     },
     onSubmit() {
+      this.submitResponse = null
       this.$refs['transactionForm'].validate((validate) => {
         if (validate) {
           if (this.transaction.execMethod === 'sendTransaction') {
@@ -165,10 +173,27 @@ export default {
         }
       })
     },
+    onResponse(response) {
+      if (response.errorCode !== 0 || response.data.errorCode !== 0) {
+        this.submitResponse = null
+        let code, message
+        if (response.errorCode !== 0) {
+          code = response.errorCode
+          message = response.message
+        } else {
+          code = response.data.errorCode
+          message = response.data.message
+        }
+        handleErrorMsgBox('执行错误：', '错误码: ' + code, message)
+      } else {
+        this.submitResponse = JSON.stringify(response.data.result)
+      }
+    },
     clearForm() {
       this.$refs['transactionForm'].resetFields()
       this.submitResponse = null
       this.$emit('clearClick')
+      this.$forceUpdate()
     }
   }
 }
